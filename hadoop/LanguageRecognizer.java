@@ -13,73 +13,55 @@ import org.apache.hadoop.mapreduce.lib.output.FileOutputFormat;
 
 public class LanguageRecognizer {
 
-  public static class LRMapper
-       extends Mapper<Object, Text, Text, IntWritable>{
+    public static class LRMapper extends Mapper<Object, Text, Text, IntWritable>{
+        private final static IntWritable one = new IntWritable(1);
 
-    private final static IntWritable one = new IntWritable(1);
+        public void map(Object key, Text value, Context context) throws IOException, InterruptedException {
+            int indexSentence = 0;
+            String[] sentences = value.toString().split("\\r?\\n");
 
-    public void map(Object key, Text value, Context context
-                    ) throws IOException, InterruptedException {
-	int indexSentence = 0;
-	String[] sentences = value.toString().split("\\r?\\n");
+            String nl = "Dutch";
+            String en = "English";
 
-	String nl = "Dutch";
-	String en = "English";
+            while (indexSentence < sentences.length) {
 
-	while (indexSentence < sentences.length) {
-		
-		String[] words = sentences[indexSentence].split("\\s+");
-		
-		int dutchCount = 0;
-            	int englishCount = 0;
+                String[] words = sentences[indexSentence].split("\\s+");
+                int dutchCount = 0, englishCount = 0;
 
+                for (int i = 0; i < words.length; i++) {
+                    words[i] = words[i].replaceAll("[\\u002C\\u002E\\u201C\\u0022]", "") ;
 
-		for (int i = 0; i < words.length; i++) {
-                words[i] = words[i].replaceAll("[\\u002C\\u002E\\u201C\\u0022]", "") ; //dot //comma // weird curved thingie but won't work
+                    for (int j = 0;j < words[i].length() -1; j++){
+                        String combi = (words[i].charAt(j) + "" + words[i].charAt((j + 1 ))).toLowerCase();
 
-                for (int j = 0;j < words[i].length(); j++){
+                        dutchCount += determineNL(combi);
+                        englishCount += determioneEN(combi);
+                    }
+                }
 
-                    String combi = "";
-                    try {
-                        combi = (words[i].charAt(j) + "" + words[i].charAt((j + 1 ))).toLowerCase();
-                    } catch(Exception e) {}
-
-                    dutchCount += determineNL(combi);
-                    englishCount += determioneEN(combi);
+                if(dutchCount > englishCount){
+                    context.write(new Text("Dutch"), one);
+                }else if(englishCount > dutchCount){
+                    context.write(new Text("English"), one);
+                }else{
+                    context.write(new Text("Unknown"), one);
                 }
             }
-
-		if(dutchCount > englishCount){
-			context.write(new Text("Dutch"), one);
-		}else if(englishCount > dutchCount){
-			context.write(new Text("English"), one);
-		}else{
-			context.write(new Text("Unknown"), one);
-		}		
-	}
-	
+        }
     }
-  }
 
-  public static class LRReducer
-       extends Reducer<Text,IntWritable,Text,IntWritable> {
-    private IntWritable result = new IntWritable();
+    public static class LRReducer extends Reducer<Text,IntWritable,Text,IntWritable> {
+        private IntWritable result = new IntWritable();
 
-    public void reduce(Text key, Iterable<IntWritable> values,
-                       Context context
-                       ) throws IOException, InterruptedException {
-      int sum = 0;
-      for (IntWritable val : values) {
-        sum += val.get();
-      }
-      result.set(sum);
-      context.write(key, result);
+        public void reduce(Text key, Iterable<IntWritable> values, Context context) throws IOException, InterruptedException {
+          int sum = 0;
+          for (IntWritable val : values) {
+            sum += val.get();
+          }
+          result.set(sum);
+          context.write(key, result);
+        }
     }
-  }
-//here
-
-
-
 
     static int determineNL(String combi) {
         String[][] langPercentage = {{"en", "75"}, {"er", "95"}, {"de", "95"}, {"ij", "70"}, {"ge", "95"}, {"te", "95"}, {"ee", "95"}, {"el", "85"},
@@ -111,24 +93,17 @@ public class LanguageRecognizer {
         return 0;
     }
 
-
-
-
-
-//here
-
-
-  public static void main(String[] args) throws Exception {
-    Configuration conf = new Configuration();
-    Job job = Job.getInstance(conf, "language count");
-    job.setJarByClass(LanguageRecognizer.class);
-    job.setMapperClass(LRMapper.class);
-    job.setCombinerClass(LRReducer.class);
-    job.setReducerClass(LRReducer.class);
-    job.setOutputKeyClass(Text.class);
-    job.setOutputValueClass(IntWritable.class);
-    FileInputFormat.addInputPath(job, new Path(args[0]));
-    FileOutputFormat.setOutputPath(job, new Path(args[1]));
-    System.exit(job.waitForCompletion(true) ? 0 : 1);
-  }
+    public static void main(String[] args) throws Exception {
+        Configuration conf = new Configuration();
+        Job job = Job.getInstance(conf, "language count");
+        job.setJarByClass(LanguageRecognizer.class);
+        job.setMapperClass(LRMapper.class);
+        job.setCombinerClass(LRReducer.class);
+        job.setReducerClass(LRReducer.class);
+        job.setOutputKeyClass(Text.class);
+        job.setOutputValueClass(IntWritable.class);
+        FileInputFormat.addInputPath(job, new Path(args[0]));
+        FileOutputFormat.setOutputPath(job, new Path(args[1]));
+        System.exit(job.waitForCompletion(true) ? 0 : 1);
+    }
 }
